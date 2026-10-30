@@ -19,7 +19,44 @@ export interface ProjectConfig {
     groqKey: string;
     openrouterKey: string;
   };
+  git?: {
+    remoteUrl?: string;
+    userName?: string;
+    userEmail?: string;
+  };
   updatedAt?: string;
+}
+
+export interface GitFileItem {
+  path: string;
+  status: 'modified' | 'added' | 'deleted' | 'renamed' | 'untracked';
+  staged: boolean;
+}
+
+export interface GitCommitItem {
+  hash: string;
+  shortHash: string;
+  author: string;
+  date: string;
+  relativeTime: string;
+  message: string;
+}
+
+export interface GitStatusInfo {
+  isRepo: boolean;
+  workspaceDir: string;
+  branch: string;
+  branches: string[];
+  clean: boolean;
+  stagedFiles: GitFileItem[];
+  unstagedFiles: GitFileItem[];
+  untrackedFiles: string[];
+  ahead: number;
+  behind: number;
+  lastCommit?: GitCommitItem | null;
+  remotes?: { name: string; url: string }[];
+  userName?: string;
+  userEmail?: string;
 }
 
 export interface ProjectsData {

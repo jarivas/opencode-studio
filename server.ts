@@ -398,6 +398,509 @@ app.post('/api/projects/save', (req: Request, res: Response) => {
   }
 });
 
+// Helper for project git operations
+function getProjectGitWorkspace(projectId: string): { dir: string; project: any } {
+  const data = loadProjectsData();
+  const project = data.projects.find((p) => p.id === projectId) || data.projects[0];
+  let dir = WORKSPACE_DIR;
+  if (project?.workspaceDir) {
+    dir = path.isAbsolute(project.workspaceDir)
+      ? project.workspaceDir
+      : path.resolve(WORKSPACE_DIR, project.workspaceDir);
+  }
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
+  return { dir, project };
+}
+
+function ensureProjectGitUser(dir: string, project?: any) {
+  try {
+    const currentName = execSync('git config user.name', { cwd: dir, encoding: 'utf-8' }).trim();
+    if (!currentName) throw new Error('no name');
+  } catch {
+    const userName = project?.git?.userName || 'OpenCode Developer';
+    const userEmail = project?.git?.userEmail || 'developer@opencode.local';
+    try {
+      execSync(`git config user.name "${userName.replace(/"/g, '\\"')}"`, { cwd: dir });
+      execSync(`git config user.email "${userEmail.replace(/"/g, '\\"')}"`, { cwd: dir });
+    } catch (e) {
+      // ignore
+    }
+  }
+}
+
+function isGitRepo(dir: string): boolean {
+  try {
+    const res = execSync('git rev-parse --is-inside-work-tree', {
+      cwd: dir,
+      encoding: 'utf-8',
+      stdio: ['pipe', 'pipe', 'ignore'],
+    }).trim();
+    return res === 'true';
+  } catch {
+    return false;
+  }
+}
+
+// 2.1 Git Support Per Project Endpoints
+
+// GET /api/projects/:id/git/status
+app.get('/api/projects/:id/git/status', (req: Request, res: Response) => {
+  const { id } = req.params;
+  const { dir, project } = getProjectGitWorkspace(id);
+
+  if (!isGitRepo(dir)) {
+    return res.json({
+      isRepo: false,
+      workspaceDir: dir,
+      branch: '',
+      branches: [],
+      clean: true,
+      stagedFiles: [],
+      unstagedFiles: [],
+      untrackedFiles: [],
+      ahead: 0,
+      behind: 0,
+      lastCommit: null,
+      remotes: [],
+    });
+  }
+
+  try {
+    ensureProjectGitUser(dir, project);
+
+    // Current branch
+    let branch = '';
+    try {
+      branch = execSync('git branch --show-current', { cwd: dir, encoding: 'utf-8' }).trim();
+      if (!branch) {
+        branch = execSync('git rev-parse --short HEAD', { cwd: dir, encoding: 'utf-8' }).trim();
+      }
+    } catch {
+      branch = 'main';
+    }
+
+    // Branches list
+    let branches: string[] = [];
+    try {
+      const branchesRaw = execSync('git branch --format="%(refname:short)"', { cwd: dir, encoding: 'utf-8' });
+      branches = branchesRaw
+        .split('\n')
+        .map((b) => b.trim())
+        .filter(Boolean);
+    } catch {
+      branches = [branch || 'main'];
+    }
+
+    // Git Status Porcelain
+    let stagedFiles: any[] = [];
+    let unstagedFiles: any[] = [];
+    let untrackedFiles: string[] = [];
+
+    const statusRaw = execSync('git status --porcelain=v1 -u', { cwd: dir, encoding: 'utf-8' });
+    const lines = statusRaw.split('\n').filter((l) => l.length >= 3);
+
+    for (const line of lines) {
+      const x = line[0];
+      const y = line[1];
+      const filePath = line.substring(3).trim();
+
+      if (x === '?' && y === '?') {
+        untrackedFiles.push(filePath);
+        continue;
+      }
+
+      if (x !== ' ' && x !== '?') {
+        let status = 'modified';
+        if (x === 'A') status = 'added';
+        else if (x === 'D') status = 'deleted';
+        else if (x === 'R') status = 'renamed';
+        stagedFiles.push({ path: filePath, status, staged: true });
+      }
+
+      if (y !== ' ' && y !== '?') {
+        let status = 'modified';
+        if (y === 'D') status = 'deleted';
+        unstagedFiles.push({ path: filePath, status, staged: false });
+      }
+    }
+
+    // Last Commit
+    let lastCommit: any = null;
+    try {
+      const lastCommitRaw = execSync('git log -1 --pretty=format:"%H|%h|%an|%ad|%s" --date=relative', {
+        cwd: dir,
+        encoding: 'utf-8',
+      }).trim();
+      if (lastCommitRaw) {
+        const [hash, shortHash, author, relativeTime, message] = lastCommitRaw.split('|');
+        lastCommit = { hash, shortHash, author, date: relativeTime, relativeTime, message };
+      }
+    } catch {
+      // No commits yet
+    }
+
+    // Remotes
+    const remotes: { name: string; url: string }[] = [];
+    try {
+      const remotesRaw = execSync('git remote -v', { cwd: dir, encoding: 'utf-8' });
+      const seen = new Set<string>();
+      remotesRaw.split('\n').forEach((l) => {
+        const parts = l.trim().split(/\s+/);
+        if (parts.length >= 2 && !seen.has(parts[0])) {
+          seen.add(parts[0]);
+          remotes.push({ name: parts[0], url: parts[1] });
+        }
+      });
+    } catch {
+      // No remotes
+    }
+
+    // Ahead / Behind
+    let ahead = 0;
+    let behind = 0;
+    try {
+      const countRaw = execSync('git rev-list --left-right --count HEAD...@{u}', {
+        cwd: dir,
+        encoding: 'utf-8',
+      }).trim();
+      const [a, b] = countRaw.split(/\s+/);
+      ahead = parseInt(a, 10) || 0;
+      behind = parseInt(b, 10) || 0;
+    } catch {
+      // No upstream tracking
+    }
+
+    let userName = '';
+    let userEmail = '';
+    try {
+      userName = execSync('git config user.name', { cwd: dir, encoding: 'utf-8' }).trim();
+      userEmail = execSync('git config user.email', { cwd: dir, encoding: 'utf-8' }).trim();
+    } catch {
+      // ignore
+    }
+
+    const clean = stagedFiles.length === 0 && unstagedFiles.length === 0 && untrackedFiles.length === 0;
+
+    res.json({
+      isRepo: true,
+      workspaceDir: dir,
+      branch: branch || 'main',
+      branches,
+      clean,
+      stagedFiles,
+      unstagedFiles,
+      untrackedFiles,
+      ahead,
+      behind,
+      lastCommit,
+      remotes,
+      userName,
+      userEmail,
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Error al obtener estado git' });
+  }
+});
+
+// GET /api/projects/:id/git/log
+app.get('/api/projects/:id/git/log', (req: Request, res: Response) => {
+  const { id } = req.params;
+  const { dir } = getProjectGitWorkspace(id);
+
+  if (!isGitRepo(dir)) {
+    return res.json({ commits: [] });
+  }
+
+  try {
+    const raw = execSync('git log -30 --pretty=format:"%H|%h|%an|%ar|%ad|%s" --date=iso', {
+      cwd: dir,
+      encoding: 'utf-8',
+    }).trim();
+
+    if (!raw) {
+      return res.json({ commits: [] });
+    }
+
+    const commits = raw.split('\n').map((l) => {
+      const [hash, shortHash, author, relativeTime, date, message] = l.split('|');
+      return { hash, shortHash, author, relativeTime, date, message };
+    });
+
+    res.json({ commits });
+  } catch (err: any) {
+    res.json({ commits: [] });
+  }
+});
+
+// GET /api/projects/:id/git/diff
+app.get('/api/projects/:id/git/diff', (req: Request, res: Response) => {
+  const { id } = req.params;
+  const { dir } = getProjectGitWorkspace(id);
+  const staged = req.query.staged === 'true';
+  const file = req.query.file as string | undefined;
+
+  if (!isGitRepo(dir)) {
+    return res.json({ diff: '' });
+  }
+
+  try {
+    let cmd = `git diff ${staged ? '--staged' : ''}`;
+    if (file) {
+      cmd += ` -- "${file.replace(/"/g, '\\"')}"`;
+    }
+    const diff = execSync(cmd, { cwd: dir, encoding: 'utf-8', maxBuffer: 10 * 1024 * 1024 });
+    res.json({ diff });
+  } catch (err: any) {
+    res.json({ diff: '', error: err.message });
+  }
+});
+
+// POST /api/projects/:id/git/init
+app.post('/api/projects/:id/git/init', (req: Request, res: Response) => {
+  const { id } = req.params;
+  const { dir, project } = getProjectGitWorkspace(id);
+
+  try {
+    execSync('git init', { cwd: dir });
+
+    // Create default .gitignore if not present
+    const gitignorePath = path.join(dir, '.gitignore');
+    if (!fs.existsSync(gitignorePath)) {
+      const defaultIgnore = [
+        'node_modules/',
+        'dist/',
+        '.vite/',
+        '.env',
+        '.env.*',
+        '*.local',
+        '.DS_Store',
+        'npm-debug.log*',
+      ].join('\n');
+      fs.writeFileSync(gitignorePath, defaultIgnore, 'utf-8');
+    }
+
+    ensureProjectGitUser(dir, project);
+
+    res.json({
+      success: true,
+      message: `Repositorio Git inicializado correctamente en: ${dir}`,
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message || 'Error al inicializar repositorio git' });
+  }
+});
+
+// POST /api/projects/:id/git/stage
+app.post('/api/projects/:id/git/stage', (req: Request, res: Response) => {
+  const { id } = req.params;
+  const { dir } = getProjectGitWorkspace(id);
+  const { files, all } = req.body;
+
+  if (!isGitRepo(dir)) {
+    return res.status(400).json({ error: 'No es un repositorio Git' });
+  }
+
+  try {
+    if (all) {
+      execSync('git add -A', { cwd: dir });
+    } else if (Array.isArray(files) && files.length > 0) {
+      const sanitized = files.map((f: string) => `"${f.replace(/"/g, '\\"')}"`).join(' ');
+      execSync(`git add -- ${sanitized}`, { cwd: dir });
+    } else {
+      return res.status(400).json({ error: 'Especifica archivos a preparar o all: true' });
+    }
+
+    res.json({ success: true, message: 'Cambios preparados (staged)' });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/projects/:id/git/unstage
+app.post('/api/projects/:id/git/unstage', (req: Request, res: Response) => {
+  const { id } = req.params;
+  const { dir } = getProjectGitWorkspace(id);
+  const { files, all } = req.body;
+
+  if (!isGitRepo(dir)) {
+    return res.status(400).json({ error: 'No es un repositorio Git' });
+  }
+
+  try {
+    if (all) {
+      try {
+        execSync('git restore --staged .', { cwd: dir });
+      } catch {
+        execSync('git reset HEAD', { cwd: dir });
+      }
+    } else if (Array.isArray(files) && files.length > 0) {
+      const sanitized = files.map((f: string) => `"${f.replace(/"/g, '\\"')}"`).join(' ');
+      try {
+        execSync(`git restore --staged -- ${sanitized}`, { cwd: dir });
+      } catch {
+        execSync(`git reset HEAD -- ${sanitized}`, { cwd: dir });
+      }
+    }
+
+    res.json({ success: true, message: 'Cambios quitados de stage' });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/projects/:id/git/discard
+app.post('/api/projects/:id/git/discard', (req: Request, res: Response) => {
+  const { id } = req.params;
+  const { dir } = getProjectGitWorkspace(id);
+  const { files } = req.body;
+
+  if (!isGitRepo(dir)) {
+    return res.status(400).json({ error: 'No es un repositorio Git' });
+  }
+
+  if (!Array.isArray(files) || files.length === 0) {
+    return res.status(400).json({ error: 'Especifica archivos a descartar' });
+  }
+
+  try {
+    for (const f of files) {
+      const safeFile = `"${f.replace(/"/g, '\\"')}"`;
+      try {
+        execSync(`git restore -- ${safeFile}`, { cwd: dir });
+      } catch {
+        // Try checkout or git clean if untracked
+        try {
+          execSync(`git clean -f -d -- ${safeFile}`, { cwd: dir });
+        } catch {
+          // ignore
+        }
+      }
+    }
+
+    res.json({ success: true, message: 'Cambios descartados' });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/projects/:id/git/commit
+app.post('/api/projects/:id/git/commit', (req: Request, res: Response) => {
+  const { id } = req.params;
+  const { dir, project } = getProjectGitWorkspace(id);
+  const { message } = req.body;
+
+  if (!isGitRepo(dir)) {
+    return res.status(400).json({ error: 'No es un repositorio Git' });
+  }
+
+  if (!message || !message.trim()) {
+    return res.status(400).json({ error: 'El mensaje de commit es obligatorio' });
+  }
+
+  try {
+    ensureProjectGitUser(dir, project);
+
+    // Escape commit message
+    const escapedMsg = message.replace(/"/g, '\\"');
+    execSync(`git commit -m "${escapedMsg}"`, { cwd: dir });
+
+    // Fetch commit info
+    let lastCommit = null;
+    try {
+      const raw = execSync('git log -1 --pretty=format:"%H|%h|%an|%ad|%s" --date=relative', {
+        cwd: dir,
+        encoding: 'utf-8',
+      }).trim();
+      const [hash, shortHash, author, relativeTime, msg] = raw.split('|');
+      lastCommit = { hash, shortHash, author, date: relativeTime, relativeTime, message: msg };
+    } catch {}
+
+    res.json({
+      success: true,
+      message: 'Commit realizado exitosamente',
+      commit: lastCommit,
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Error al realizar commit' });
+  }
+});
+
+// POST /api/projects/:id/git/branch
+app.post('/api/projects/:id/git/branch', (req: Request, res: Response) => {
+  const { id } = req.params;
+  const { dir } = getProjectGitWorkspace(id);
+  const { action, branchName } = req.body;
+
+  if (!isGitRepo(dir)) {
+    return res.status(400).json({ error: 'No es un repositorio Git' });
+  }
+
+  if (!branchName || !branchName.trim()) {
+    return res.status(400).json({ error: 'Se requiere el nombre de la rama' });
+  }
+
+  const cleanBranch = branchName.trim().replace(/[^a-zA-Z0-9_\-\.\/]/g, '-');
+
+  try {
+    if (action === 'create') {
+      execSync(`git checkout -b "${cleanBranch}"`, { cwd: dir });
+      res.json({ success: true, message: `Rama "${cleanBranch}" creada y activada`, branch: cleanBranch });
+    } else {
+      execSync(`git checkout "${cleanBranch}"`, { cwd: dir });
+      res.json({ success: true, message: `Cambiado a rama "${cleanBranch}"`, branch: cleanBranch });
+    }
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Error al cambiar de rama' });
+  }
+});
+
+// POST /api/projects/:id/git/config
+app.post('/api/projects/:id/git/config', (req: Request, res: Response) => {
+  const { id } = req.params;
+  const { dir, project } = getProjectGitWorkspace(id);
+  const { userName, userEmail, remoteUrl } = req.body;
+
+  try {
+    if (isGitRepo(dir)) {
+      if (userName) {
+        execSync(`git config user.name "${userName.replace(/"/g, '\\"')}"`, { cwd: dir });
+      }
+      if (userEmail) {
+        execSync(`git config user.email "${userEmail.replace(/"/g, '\\"')}"`, { cwd: dir });
+      }
+      if (remoteUrl) {
+        try {
+          execSync(`git remote set-url origin "${remoteUrl.replace(/"/g, '\\"')}"`, { cwd: dir });
+        } catch {
+          execSync(`git remote add origin "${remoteUrl.replace(/"/g, '\\"')}"`, { cwd: dir });
+        }
+      }
+    }
+
+    // Persist git metadata in opencode.projects.json
+    const data = loadProjectsData();
+    const projIndex = data.projects.findIndex((p) => p.id === id);
+    if (projIndex !== -1) {
+      data.projects[projIndex].git = {
+        ...(data.projects[projIndex].git || {}),
+        userName: userName !== undefined ? userName : data.projects[projIndex].git?.userName,
+        userEmail: userEmail !== undefined ? userEmail : data.projects[projIndex].git?.userEmail,
+        remoteUrl: remoteUrl !== undefined ? remoteUrl : data.projects[projIndex].git?.remoteUrl,
+      };
+      saveProjectsData(data);
+    }
+
+    res.json({
+      success: true,
+      message: 'Configuración Git guardada para este proyecto',
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Legacy /api/config mapping to active project
 app.get('/api/config', (req: Request, res: Response) => {
   const data = loadProjectsData();

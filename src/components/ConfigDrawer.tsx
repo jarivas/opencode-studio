@@ -17,6 +17,7 @@ import {
   Cpu,
   Layers,
   Sparkles,
+  GitBranch,
 } from 'lucide-react';
 import { OpenCodeConfig, OpenCodeStatus } from '../types';
 
@@ -27,6 +28,7 @@ interface ConfigDrawerProps {
   status: OpenCodeStatus | null;
   onSaveConfig: (newConfig: Partial<OpenCodeConfig> & { apiKeys?: any; projectName?: string }) => Promise<void>;
   onTestKey: (provider: string, key: string) => Promise<{ success: boolean; message: string }>;
+  onOpenGit?: () => void;
 }
 
 export const ConfigDrawer: React.FC<ConfigDrawerProps> = ({
@@ -36,11 +38,12 @@ export const ConfigDrawer: React.FC<ConfigDrawerProps> = ({
   status,
   onSaveConfig,
   onTestKey,
+  onOpenGit,
 }) => {
   if (!isOpen) return null;
 
-  // Simple tabs: 1) General & Preview, 2) API Keys
-  const [activeTab, setActiveTab] = useState<'general' | 'keys'>('general');
+  // Tabs: 1) General & Preview, 2) API Keys, 3) Git
+  const [activeTab, setActiveTab] = useState<'general' | 'keys' | 'git'>('general');
 
   // Form values for this individual project
   const [projectName, setProjectName] = useState(config.name || 'Proyecto Principal');
@@ -69,6 +72,12 @@ export const ConfigDrawer: React.FC<ConfigDrawerProps> = ({
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
 
+  // Git state for this project
+  const [gitUserName, setGitUserName] = useState(config.git?.userName || '');
+  const [gitUserEmail, setGitUserEmail] = useState(config.git?.userEmail || '');
+  const [gitRemoteUrl, setGitRemoteUrl] = useState(config.git?.remoteUrl || '');
+  const [workspaceDir, setWorkspaceDir] = useState(config.workspaceDir || '');
+
   // Sync state whenever active project config changes
   useEffect(() => {
     setProjectName(config.name || 'Proyecto Principal');
@@ -76,6 +85,10 @@ export const ConfigDrawer: React.FC<ConfigDrawerProps> = ({
     setModel(config.model || 'google/gemini-2.5-flash');
     setAgent(config.agent || 'build');
     setSystemPrompt(config.systemPrompt || '');
+    setGitUserName(config.git?.userName || '');
+    setGitUserEmail(config.git?.userEmail || '');
+    setGitRemoteUrl(config.git?.remoteUrl || '');
+    setWorkspaceDir(config.workspaceDir || '');
     setKeys({
       geminiKey: config.keys?.geminiKey || '',
       anthropicKey: config.keys?.anthropicKey || '',
@@ -124,6 +137,12 @@ export const ConfigDrawer: React.FC<ConfigDrawerProps> = ({
         model,
         agent,
         systemPrompt,
+        workspaceDir: workspaceDir || undefined,
+        git: {
+          userName: gitUserName,
+          userEmail: gitUserEmail,
+          remoteUrl: gitRemoteUrl,
+        },
         apiKeys: keys,
       });
       setSaveSuccess(true);
@@ -206,6 +225,18 @@ export const ConfigDrawer: React.FC<ConfigDrawerProps> = ({
           >
             <Key className="w-4 h-4 text-amber-500" />
             <span>Claves de API</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('git')}
+            className={`py-3 text-xs font-semibold border-b-2 transition-all cursor-pointer flex items-center gap-2 ${
+              activeTab === 'git'
+                ? 'border-neutral-900 text-neutral-900 dark:border-white dark:text-white'
+                : 'border-transparent text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200'
+            }`}
+          >
+            <GitBranch className="w-4 h-4 text-amber-500" />
+            <span>Git / Repositorio</span>
           </button>
         </div>
 
@@ -527,6 +558,94 @@ export const ConfigDrawer: React.FC<ConfigDrawerProps> = ({
             )}
           </div>
 
+          {/* TAB 3: GIT & VERSION CONTROL */}
+          {activeTab === 'git' && (
+            <div className="space-y-4">
+              <div className="p-3.5 rounded-xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50/70 dark:bg-neutral-800/40 flex items-center justify-between">
+                <div>
+                  <h4 className="text-xs font-bold text-neutral-900 dark:text-white flex items-center gap-1.5">
+                    <GitBranch className="w-4 h-4 text-amber-500" />
+                    <span>Control de Versiones del Proyecto</span>
+                  </h4>
+                  <p className="text-[11px] text-neutral-500 mt-0.5">
+                    Gestión independiente de commits, ramas y diffs para {projectName}.
+                  </p>
+                </div>
+
+                {onOpenGit && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onClose();
+                      onOpenGit();
+                    }}
+                    className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-neutral-900 text-white dark:bg-white dark:text-neutral-900 hover:bg-neutral-800 dark:hover:bg-neutral-100 transition-colors cursor-pointer shrink-0 shadow-2xs"
+                  >
+                    Abrir Gestor Git
+                  </button>
+                )}
+              </div>
+
+              {/* Workspace directory */}
+              <div className="space-y-1">
+                <label className="text-xs font-semibold text-neutral-700 dark:text-neutral-300">
+                  Directorio de Trabajo (Workspace)
+                </label>
+                <input
+                  type="text"
+                  value={workspaceDir}
+                  onChange={(e) => setWorkspaceDir(e.target.value)}
+                  placeholder="/app/applet"
+                  className="w-full text-xs font-mono px-3 py-2 rounded-lg border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 text-neutral-900 dark:text-white"
+                />
+                <p className="text-[11px] text-neutral-400">
+                  Ruta donde se ejecutarán los comandos git y las operaciones de OpenCode para este proyecto.
+                </p>
+              </div>
+
+              {/* Git User Name */}
+              <div className="space-y-1">
+                <label className="text-xs font-semibold text-neutral-700 dark:text-neutral-300">
+                  Nombre de Autor (user.name)
+                </label>
+                <input
+                  type="text"
+                  value={gitUserName}
+                  onChange={(e) => setGitUserName(e.target.value)}
+                  placeholder="OpenCode Developer"
+                  className="w-full text-xs px-3 py-2 rounded-lg border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 text-neutral-900 dark:text-white"
+                />
+              </div>
+
+              {/* Git User Email */}
+              <div className="space-y-1">
+                <label className="text-xs font-semibold text-neutral-700 dark:text-neutral-300">
+                  Correo Electrónico de Autor (user.email)
+                </label>
+                <input
+                  type="email"
+                  value={gitUserEmail}
+                  onChange={(e) => setGitUserEmail(e.target.value)}
+                  placeholder="developer@opencode.local"
+                  className="w-full text-xs px-3 py-2 rounded-lg border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 text-neutral-900 dark:text-white"
+                />
+              </div>
+
+              {/* Git Remote URL */}
+              <div className="space-y-1">
+                <label className="text-xs font-semibold text-neutral-700 dark:text-neutral-300">
+                  Repositorio Remoto (origin URL)
+                </label>
+                <input
+                  type="text"
+                  value={gitRemoteUrl}
+                  onChange={(e) => setGitRemoteUrl(e.target.value)}
+                  placeholder="https://github.com/usuario/repositorio.git"
+                  className="w-full text-xs font-mono px-3 py-2 rounded-lg border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 text-neutral-900 dark:text-white"
+                />
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Footer */}

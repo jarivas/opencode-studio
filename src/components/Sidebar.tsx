@@ -12,6 +12,7 @@ import {
   ChevronRight,
   X,
   ExternalLink,
+  GitBranch,
 } from 'lucide-react';
 import { ProjectConfig, OpenCodeStatus } from '../types';
 
@@ -20,8 +21,8 @@ interface SidebarProps {
   onCloseMobile: () => void;
   isCollapsedDesktop: boolean;
   onToggleCollapseDesktop: () => void;
-  viewMode: 'chat' | 'files';
-  setViewMode: (mode: 'chat' | 'files') => void;
+  viewMode: 'chat' | 'files' | 'git';
+  setViewMode: (mode: 'chat' | 'files' | 'git') => void;
   activeProject: ProjectConfig | null;
   projectsList: { id: string; name: string; previewBaseUrl: string }[];
   onSwitchProject: (id: string) => void;
@@ -30,6 +31,7 @@ interface SidebarProps {
   darkMode: boolean;
   setDarkMode: (val: boolean | ((prev: boolean) => boolean)) => void;
   status: OpenCodeStatus | null;
+  gitChangesCount?: number;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -47,6 +49,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   darkMode,
   setDarkMode,
   status,
+  gitChangesCount,
 }) => {
   const [isCreatingInline, setIsCreatingInline] = useState(false);
   const [newProjectName, setNewProjectName] = useState('');
@@ -182,6 +185,31 @@ export const Sidebar: React.FC<SidebarProps> = ({
             >
               <FolderTree className="w-4 h-4 shrink-0" />
               {!isCollapsedDesktop && <span className="truncate">Archivos</span>}
+            </button>
+
+            {/* Git View Button */}
+            <button
+              onClick={() => {
+                setViewMode('git');
+                onCloseMobile();
+              }}
+              className={`w-full flex items-center justify-between px-2.5 py-2 rounded-lg text-xs font-medium transition-colors cursor-pointer ${
+                viewMode === 'git'
+                  ? 'bg-neutral-100 dark:bg-neutral-800 text-neutral-900 dark:text-white font-semibold'
+                  : 'text-neutral-600 dark:text-neutral-400 hover:bg-neutral-50 dark:hover:bg-neutral-800/50 hover:text-neutral-900 dark:hover:text-white'
+              }`}
+              title={isCollapsedDesktop ? 'Control de Versiones (Git)' : undefined}
+            >
+              <div className="flex items-center gap-2.5 truncate">
+                <GitBranch className="w-4 h-4 shrink-0 text-amber-500" />
+                {!isCollapsedDesktop && <span className="truncate">Git</span>}
+              </div>
+
+              {!isCollapsedDesktop && gitChangesCount !== undefined && gitChangesCount > 0 && (
+                <span className="px-1.5 py-0.2 rounded-full text-[10px] font-mono font-bold bg-amber-100 text-amber-800 dark:bg-amber-950/80 dark:text-amber-300">
+                  {gitChangesCount}
+                </span>
+              )}
             </button>
           </div>
 

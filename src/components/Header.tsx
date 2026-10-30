@@ -1,12 +1,15 @@
 import React from 'react';
-import { Menu, Folder, Cpu, Sliders } from 'lucide-react';
+import { Menu, Folder, Cpu, Sliders, GitBranch } from 'lucide-react';
 import { ProjectConfig } from '../types';
 
 interface HeaderProps {
   onOpenMobileSidebar: () => void;
   activeProject: ProjectConfig | null;
-  viewMode: 'chat' | 'files';
+  viewMode: 'chat' | 'files' | 'git';
   onOpenSettings: () => void;
+  onOpenGit?: () => void;
+  gitBranch?: string;
+  gitChangesCount?: number;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -14,13 +17,18 @@ export const Header: React.FC<HeaderProps> = ({
   activeProject,
   viewMode,
   onOpenSettings,
+  onOpenGit,
+  gitBranch,
+  gitChangesCount,
 }) => {
   const getViewTitle = () => {
     switch (viewMode) {
       case 'chat':
         return 'Chat';
       case 'files':
-        return 'Explorador de Archivos';
+        return 'Archivos';
+      case 'git':
+        return 'Git';
       default:
         return 'Chat';
     }
@@ -50,11 +58,32 @@ export const Header: React.FC<HeaderProps> = ({
         </div>
       </div>
 
-      {/* Right zone: Model indicator and Individual Project Settings button */}
+      {/* Right zone: Git branch pill, Model indicator and Individual Project Settings button */}
       <div className="flex items-center gap-2 shrink-0">
-        <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] text-neutral-500 dark:text-neutral-400 bg-neutral-100/80 dark:bg-neutral-800/60 font-mono">
+        {/* Quick Git Branch Indicator */}
+        {gitBranch && onOpenGit && (
+          <button
+            onClick={onOpenGit}
+            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-mono font-medium transition-colors cursor-pointer border ${
+              viewMode === 'git'
+                ? 'bg-neutral-900 text-white dark:bg-white dark:text-neutral-900 border-neutral-900 dark:border-white shadow-2xs'
+                : 'bg-neutral-100/90 dark:bg-neutral-800/80 text-neutral-700 dark:text-neutral-300 border-neutral-200 dark:border-neutral-700 hover:bg-neutral-200 dark:hover:bg-neutral-700'
+            }`}
+            title={`Rama actual: ${gitBranch}. Clic para abrir Git.`}
+          >
+            <GitBranch className="w-3 h-3 text-amber-500 shrink-0" />
+            <span className="truncate max-w-[90px]">{gitBranch}</span>
+            {gitChangesCount !== undefined && gitChangesCount > 0 && (
+              <span className="ml-0.5 px-1 py-0.2 rounded-full text-[9px] bg-amber-500 text-white font-bold leading-none">
+                {gitChangesCount}
+              </span>
+            )}
+          </button>
+        )}
+
+        <div className="hidden md:flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] text-neutral-500 dark:text-neutral-400 bg-neutral-100/80 dark:bg-neutral-800/60 font-mono">
           <Cpu className="w-3 h-3 text-neutral-400" />
-          <span className="truncate max-w-[140px]">{activeProject?.model || 'OpenCode'}</span>
+          <span className="truncate max-w-[130px]">{activeProject?.model || 'OpenCode'}</span>
           <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 ml-0.5" title="Listo" />
         </div>
 

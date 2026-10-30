@@ -9,13 +9,15 @@ import { Header } from './components/Header';
 import { ChatInterface } from './components/ChatInterface';
 import { ConfigDrawer } from './components/ConfigDrawer';
 import { WorkspaceExplorer } from './components/WorkspaceExplorer';
+import { GitPanel } from './components/GitPanel';
 import { OpenCodeConfig, OpenCodeStatus, ChatMessage } from './types';
 import { CheckCircle2, AlertCircle, X } from 'lucide-react';
 
 export default function App() {
-  const [viewMode, setViewMode] = useState<'chat' | 'files'>('chat');
+  const [viewMode, setViewMode] = useState<'chat' | 'files' | 'git'>('chat');
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   const [isCollapsedDesktop, setIsCollapsedDesktop] = useState(false);
+  const [activeGitInfo, setActiveGitInfo] = useState<{ branch: string; changesCount: number } | null>(null);
 
   const [darkMode, setDarkMode] = useState<boolean>(() => {
     return window.matchMedia('(prefers-color-scheme: dark)').matches;
@@ -121,10 +123,38 @@ export default function App() {
     }
   };
 
+  // Fetch active project git status summary
+  const fetchActiveGitInfo = async (projId?: string) => {
+    const targetId = projId || config.id || 'default';
+    try {
+      const res = await fetch(`/api/projects/${targetId}/git/status`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.isRepo) {
+          const count =
+            (data.stagedFiles?.length || 0) +
+            (data.unstagedFiles?.length || 0) +
+            (data.untrackedFiles?.length || 0);
+          setActiveGitInfo({ branch: data.branch || 'main', changesCount: count });
+        } else {
+          setActiveGitInfo(null);
+        }
+      }
+    } catch {
+      setActiveGitInfo(null);
+    }
+  };
+
   useEffect(() => {
     fetchStatus();
     fetchProjects();
   }, []);
+
+  useEffect(() => {
+    if (config.id) {
+      fetchActiveGitInfo(config.id);
+    }
+  }, [config.id]);
 
   // Switch active project
   const handleSwitchProject = async (projectId: string) => {
@@ -145,6 +175,7 @@ export default function App() {
         }
         showToast(data.message || `Cambiado a proyecto: ${projectId}`);
         fetchProjects();
+        fetchActiveGitInfo(projectId);
       }
     } catch (e: any) {
       showToast(`Error al cambiar de proyecto: ${e.message}`, 'error');
@@ -392,23 +423,35 @@ export default function App() {
         darkMode={darkMode}
         setDarkMode={setDarkMode}
         status={status}
+        gitChangesCount={activeGitInfo?.changesCount}
       />
 
       {/* Main Content Viewport */}
       <div className="flex-1 flex flex-col h-full min-w-0 overflow-hidden">
-        {/* Streamlined Header with Project Settings trigger */}
+        {/* Streamlined Header with Project Settings and Git trigger */}
         <Header
           onOpenMobileSidebar={() => setIsMobileSidebarOpen(true)}
           activeProject={config}
           viewMode={viewMode}
           onOpenSettings={() => setIsSettingsOpen(true)}
+          onOpenGit={() => setViewMode('git')}
+          gitBranch={activeGitInfo?.branch}
+          gitChangesCount={activeGitInfo?.changesCount}
         />
 
-        {/* Workspace Body: Full-width Chat or Workspace Explorer */}
+        {/* Workspace Body: Chat, Files, or Git */}
         <div className="flex-1 flex flex-col overflow-hidden relative">
           {viewMode === 'files' ? (
             <div className="flex-1 overflow-y-auto p-4 sm:p-6 max-w-7xl mx-auto w-full">
               <WorkspaceExplorer onSendToStudio={() => setViewMode('chat')} />
+            </div>
+          ) : viewMode === 'git' ? (
+            <div className="flex-1 h-full overflow-hidden">
+              <GitPanel
+                activeProject={config}
+                onShowToast={showToast}
+                onOpenSettings={() => setIsSettingsOpen(true)}
+              />
             </div>
           ) : (
             <div className="flex-1 h-full overflow-hidden">
@@ -434,6 +477,7 @@ export default function App() {
         status={status}
         onSaveConfig={handleSaveConfig}
         onTestKey={handleTestKey}
+        onOpenGit={() => setViewMode('git')}
       />
 
       {/* Toast Notification */}
