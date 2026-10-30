@@ -1,0 +1,6 @@
+{
+  "name": "OpenCode Studio & Control Panel",
+  "description": "Panel de control intuitivo e interfaz web para OpenCode: gestiona API keys, proveedores de IA, parámetros de agente y ejecuta comandos en tiempo real.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

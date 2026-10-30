@@ -1,0 +1,51 @@
+{
+  "activeProjectId": "default",
+  "projects": [
+    {
+      "id": "default",
+      "name": "Proyecto Principal",
+      "previewBaseUrl": "http://localhost:3000",
+      "workspaceDir": "/app/applet",
+      "model": "google/gemini-2.5-flash",
+      "agent": "build",
+      "autoApprove": true,
+      "thinking": true,
+      "logLevel": "info",
+      "standalone": true,
+      "customBaseUrl": "",
+      "systemPrompt": "# Reglas para Proyecto Principal\n- TypeScript estricto\n- Tailwind CSS para diseño",
+      "keys": {
+        "geminiKey": "••••••••cukQ",
+        "anthropicKey": "",
+        "openaiKey": "",
+        "deepseekKey": "",
+        "groqKey": "",
+        "openrouterKey": ""
+      },
+      "updatedAt": "2026-10-30T07:43:39.516Z"
+    },
+    {
+      "id": "frontend-vite",
+      "name": "Frontend Vite",
+      "previewBaseUrl": "http://localhost:5173",
+      "workspaceDir": "/app/applet",
+      "model": "google/gemini-2.5-flash",
+      "agent": "build",
+      "autoApprove": true,
+      "thinking": true,
+      "logLevel": "info",
+      "standalone": true,
+      "customBaseUrl": "",
+      "systemPrompt": "# Reglas para Frontend Vite\n- TypeScript estricto\n- Código limpio",
+      "keys": {
+        "geminiKey": "••••••••cukQ",
+        "anthropicKey": "",
+        "openaiKey": "",
+        "deepseekKey": "",
+        "groqKey": "",
+        "openrouterKey": ""
+      },
+      "updatedAt": "2026-10-30T07:43:43.643Z"
+    }
+  ]
+}

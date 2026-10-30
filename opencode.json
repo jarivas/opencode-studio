@@ -1,0 +1,14 @@
+{
+  "previewBaseUrl": "http://localhost:3000",
+  "model": "google/gemini-2.5-flash",
+  "agent": "build",
+  "autoApprove": true,
+  "thinking": true,
+  "logLevel": "info",
+  "standalone": true,
+  "customBaseUrl": "",
+  "systemPrompt": "# Reglas para Proyecto Principal\n- TypeScript estricto\n- Tailwind CSS para diseño",
+  "projectId": "default",
+  "projectName": "Proyecto Principal",
+  "updatedAt": "2026-10-30T07:43:52.531Z"
+}
